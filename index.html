@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>平台網站 - 三角形圍棋</title>
+    <script src="https://cdn.tailwindcss.com/dist/cdn.min.js"></script>
+    <script>
+        // 這個設定區塊現在應該能找到 tailwind 物件了
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'], // 使用 Inter 字體
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+      @font-face {
+        font-family: 'LucideIcons';
+        /* *** 修正：統一使用 unpkg.com *** */
+        src: url(https://cdn.jsdelivr.net/npm/lucide-static@latest/font/Lucide.ttf) format('truetype');
+      }
+      .lucide {
+        font-family: 'LucideIcons';
+        font-size: 1.25rem; /* 調整圖標大小 */
+        line-height: 1;
+      }
+      /* 棋盤和棋子的基本樣式 */
+      canvas {
+        background-color: #d2b48c; /* 木質背景色 */
+        border-radius: 0.5rem; /* 圓角 */
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        display: block; /* 確保 canvas 是塊級元素 */
+        margin: 0 auto; /* 讓畫布在容器內水平居中 (如果容器比畫布寬) */
+      }
+      /* 自定義消息框樣式 */
+      #message-box {
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background-color: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 10px 20px;
+        border-radius: 8px;
+        z-index: 1000;
+        display: none; /* 初始隱藏 */
+        font-family: 'Inter', sans-serif;
+      }
+      /* 限制輸入框寬度 */
+      #board-size-input {
+        width: 80px; /* 設定一個合適的寬度 */
+      }
+    </style>
+</head>
+<body class="bg-gray-200 flex flex-col items-center min-h-screen font-sans p-4">
+
+    <header class="w-full max-w-4xl text-center py-6">
+        <h1 class="text-4xl font-bold text-gray-800">遊戲平台</h1>
+        <p class="text-lg text-gray-600">歡迎來玩三角形圍棋！</p>
+    </header>
+
+    <main class="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg mt-4">
+
+        <h2 class="text-2xl font-semibold text-center text-gray-700 mb-6">三角形圍棋遊戲</h2>
+
+        <div class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <h3 class="text-lg font-semibold mb-3 text-gray-700">遊戲設定</h3>
+            <div class="flex flex-wrap items-center justify-center gap-4">
+                <label for="board-size-input" class="text-gray-600 font-medium">棋盤大小 (邊長點數):</label>
+                <input type="number" id="board-size-input" value="5" min="3" max="19" class="border border-gray-300 rounded-md px-2 py-1 text-center focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                <button id="set-size-button" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-150 ease-in-out flex items-center space-x-1 shadow-md">
+                    <span class="lucide">&#xea27;</span> <span>設定大小並開始</span>
+                </button>
+            </div>
+             <p class="text-xs text-gray-500 text-center mt-2">建議大小 3 到 19 之間。</p>
+        </div>
+
+        <div class="flex justify-between items-center mb-4 text-lg">
+            <div id="player-turn" class="font-semibold">輪到：<span id="current-player-indicator" class="inline-block w-4 h-4 rounded-full bg-black align-middle ml-1 border border-gray-400"></span> 黑棋</div>
+            <div class="text-gray-600">
+                提子: 黑 <span id="black-captures">0</span> | 白 <span id="white-captures">0</span>
+            </div>
+        </div>
+
+        <div id="canvas-container" class="relative mb-4 border border-gray-300 rounded-md overflow-hidden" style="padding-bottom: 86.6%;"> <canvas id="go-board" class="absolute top-0 left-0 w-full h-full"></canvas>
+        </div>
+
+        <div class="flex justify-center space-x-4 mt-6">
+             <button id="pass-button" class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg transition duration-150 ease-in-out flex items-center space-x-1 shadow-md">
+                 <span>PASS</span>
+                 <span>跳過</span>
+             </button>
+            <button id="reset-button" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition duration-150 ease-in-out flex items-center space-x-1 shadow-md">
+                <span class="lucide">&#xe90c;</span> <span>重置 (目前大小)</span>
+            </button>
+        </div>
+    </main>
+
+    <footer class="w-full max-w-4xl text-center py-4 mt-8">
+        <p class="text-sm text-gray-500">&copy; 2025 遊戲平台. All rights reserved.</p>
+    </footer>
+
+    <div id="message-box"></div>
+
+    <script>
+        // --- 全局變數定義 ---
+        const canvas = document.getElementById('go-board');
+        const ctx = canvas.getContext('2d');
+        const playerTurnElement = document.getElementById('player-turn');
+        const currentPlayerIndicator = document.getElementById('current-player-indicator');
+        const blackCapturesElement = document.getElementById('black-captures');
+        const whiteCapturesElement = document.getElementById('white-captures');
+        const passButton = document.getElementById('pass-button');
+        const resetButton = document.getElementById('reset-button');
+        const setSizeButton = document.getElementById('set-size-button');
+        const boardSizeInput = document.getElementById('board-size-input');
+        const messageBox = document.getElementById('message-box');
+        const canvasContainer = document.getElementById('canvas-container');
+
+        // --- 遊戲設定 ---
+        let BOARD_SIZE = 5; // 初始棋盤大小
+        const EMPTY = 0;
+        const BLACK = 1;
+        const WHITE = 2;
+        const MIN_BOARD_SIZE = 3;
+        const MAX_BOARD_SIZE = 19;
+
+        // --- 遊戲狀態 ---
+        let board = [];
+        let currentPlayer = BLACK;
+        let captures = { [BLACK]: 0, [WHITE]: 0 };
+        let points = []; // 儲存點的 {x, y, r, c} 座標
+        let pointRadius;
+        let stoneRadius;
+        let boardHeight, boardWidth;
+        let lastMovePassed = false;
+        let isGameOver = false;
+
+        // --- 繪圖相關函式 ---
+
+        /**
+         * 調整畫布大小以適應容器，並保持長寬比
+         */
+        function resizeCanvas() {
+            const containerWidth = canvasContainer.clientWidth;
+            boardWidth = containerWidth;
+            boardHeight = boardWidth * Math.sqrt(3) / 2; // 維持等邊三角形比例
+
+            canvasContainer.style.paddingBottom = `${(Math.sqrt(3) / 2) * 100}%`; // 動態調整比例
+
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = boardWidth * dpr;
+            canvas.height = boardHeight * dpr;
+            canvas.style.width = `${boardWidth}px`;
+            canvas.style.height = `${boardHeight}px`;
+            ctx.scale(dpr, dpr); // 針對高 DPI 螢幕進行縮放
+
+            // 根據棋盤大小計算棋子半徑
+            const effectiveBoardSize = Math.max(1, BOARD_SIZE);
+            stoneRadius = boardWidth / (effectiveBoardSize * 2.2); // 調整棋子大小比例
+            pointRadius = stoneRadius * 0.3; // 交叉點標記大小
+        }
+
+        /**
+         * 計算棋盤上所有交叉點的像素座標
+         */
+        function calculatePoints() {
+            points = [];
+            const marginX = boardWidth * 0.1; // 左右邊距
+            const marginY = boardHeight * 0.1; // 上下邊距
+            const effectiveWidth = boardWidth - 2 * marginX;
+            const effectiveHeight = boardHeight - 2 * marginY;
+            const topY = marginY; // 頂點 Y
+            const topX = boardWidth / 2; // 頂點 X
+
+            if (BOARD_SIZE < 1) return;
+            if (BOARD_SIZE === 1) {
+                 points.push([{ x: topX, y: topY + effectiveHeight / 2, r: 0, c: 0 }]);
+                 return;
+            }
+            const divisor = BOARD_SIZE - 1; // 分母 (>=1)
+
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                const rowPoints = [];
+                const numPointsInRow = r + 1;
+                const y = topY + (effectiveHeight * r) / divisor;
+                const startX = topX - (effectiveWidth * r) / (2 * divisor);
+                const stepX = (numPointsInRow <= 1) ? 0 : (effectiveWidth * r) / (divisor * (numPointsInRow - 1));
+
+                for (let c = 0; c < numPointsInRow; c++) {
+                    const x = startX + c * stepX;
+                    rowPoints.push({ x, y, r, c }); // 儲存行列資訊
+                }
+                points.push(rowPoints);
+            }
+        }
+
+        /**
+         * 繪製棋盤格線
+         */
+        function drawGrid() {
+            if (points.length === 0 || BOARD_SIZE < 2) return;
+
+            ctx.strokeStyle = '#6b4f2d'; // 深棕色線條
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+
+            // 繪製所有內部線段
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                 if (!points[r]) continue;
+                for (let c = 0; c <= r; c++) {
+                    const p1 = points[r][c];
+                    if (!p1) continue;
+
+                    // 水平線 -> 右邊點 (points[r][c+1])
+                    if (c < r && points[r][c+1]) {
+                        ctx.moveTo(p1.x, p1.y);
+                        ctx.lineTo(points[r][c+1].x, points[r][c+1].y);
+                    }
+                    // 左下斜線 -> 下一行同列點 (points[r+1][c])
+                    if (r < BOARD_SIZE - 1 && points[r+1] && points[r+1][c]) {
+                        ctx.moveTo(p1.x, p1.y);
+                        ctx.lineTo(points[r+1][c].x, points[r+1][c].y);
+                    }
+                    // 右下斜線 -> 下一行下一列點 (points[r+1][c+1])
+                    if (r < BOARD_SIZE - 1 && points[r+1] && points[r+1][c+1]) {
+                        ctx.moveTo(p1.x, p1.y);
+                        ctx.lineTo(points[r+1][c+1].x, points[r+1][c+1].y);
+                    }
+                }
+            }
+            ctx.stroke();
+
+            // 繪製交叉點標記
+            ctx.fillStyle = '#6b4f2d';
+            points.flat().forEach(p => {
+                if(p){
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, pointRadius, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+        }
+
+        /**
+         * 繪製棋盤上的所有棋子
+         */
+        function drawStones() {
+            if (points.length === 0) return;
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                 if (!points[r] || !board[r]) continue;
+                for (let c = 0; c < points[r].length; c++) {
+                    if (points[r][c] && board[r][c] !== undefined && board[r][c] !== EMPTY) {
+                        drawStone(points[r][c].x, points[r][c].y, board[r][c]);
+                    }
+                }
+            }
+        }
+
+        /**
+         * 繪製單個棋子
+         * @param {number} x - 棋子中心 X 座標
+         * @param {number} y - 棋子中心 Y 座標
+         * @param {number} player - 玩家 (BLACK 或 WHITE)
+         */
+        function drawStone(x, y, player) {
+            ctx.beginPath();
+            ctx.arc(x, y, stoneRadius, 0, Math.PI * 2);
+            ctx.fillStyle = (player === BLACK) ? '#000000' : '#ffffff';
+            ctx.fill();
+            ctx.strokeStyle = (player === BLACK) ? '#444444' : '#cccccc'; // 棋子邊框
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+
+        // --- 遊戲邏輯函式 ---
+
+        /**
+         * 初始化棋盤狀態數組
+         */
+        function initBoard() {
+            board = [];
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                board.push(Array(r + 1).fill(EMPTY)); // 每行點數不同
+            }
+        }
+
+        /**
+         * 初始化或重置遊戲
+         */
+        function initGame() {
+            console.log(`Initializing game with size ${BOARD_SIZE}...`);
+            isGameOver = false;
+            initBoard();
+            currentPlayer = BLACK;
+            captures = { [BLACK]: 0, [WHITE]: 0 };
+            lastMovePassed = false;
+            resizeCanvas();      // 調整畫布大小
+            calculatePoints();   // 計算點座標
+            drawBoard();         // 繪製棋盤
+            updateUI();          // 更新介面顯示
+            hideMessage();       // 隱藏消息提示
+            enableClicks();      // 啟用點擊
+            console.log("Game initialized.");
+        }
+
+        /**
+         * 根據輸入框設定的大小啟動新遊戲
+         */
+        function startGameWithSize() {
+            const newSize = parseInt(boardSizeInput.value, 10);
+
+            if (isNaN(newSize) || newSize < MIN_BOARD_SIZE || newSize > MAX_BOARD_SIZE) {
+                showMessage(`無效的棋盤大小。請輸入 ${MIN_BOARD_SIZE} 到 ${MAX_BOARD_SIZE} 之間的值。`, 3000);
+                boardSizeInput.value = BOARD_SIZE; // 恢復顯示之前有效的大小
+                return;
+            }
+
+            BOARD_SIZE = newSize; // 更新全局棋盤大小
+            initGame(); // 使用新大小初始化遊戲
+        }
+
+        /**
+         * 重新繪製整個棋盤（格線和棋子）
+         */
+        function drawBoard() {
+            // 清除畫布 (使用縮放前的尺寸)
+            ctx.clearRect(0, 0, canvas.width / (window.devicePixelRatio || 1), canvas.height / (window.devicePixelRatio || 1));
+            drawGrid();   // 繪製格線
+            drawStones(); // 繪製棋子
+        }
+
+        /**
+         * 更新玩家輪次和提子數顯示
+         */
+        function updateUI() {
+            playerTurnElement.textContent = `輪到：${currentPlayer === BLACK ? '黑棋' : '白棋'}`;
+            currentPlayerIndicator.style.backgroundColor = currentPlayer === BLACK ? 'black' : 'white';
+            currentPlayerIndicator.style.border = currentPlayer === WHITE ? '1px solid black' : 'none';
+            blackCapturesElement.textContent = captures[BLACK];
+            whiteCapturesElement.textContent = captures[WHITE];
+        }
+
+        /**
+         * 顯示臨時消息
+         * @param {string} msg - 要顯示的消息
+         * @param {number} [duration=2000] - 顯示時間（毫秒）
+         */
+        function showMessage(msg, duration = 2000) {
+            messageBox.textContent = msg;
+            messageBox.style.display = 'block';
+            if (messageBox.timer) {
+                clearTimeout(messageBox.timer);
+            }
+            messageBox.timer = setTimeout(hideMessage, duration);
+        }
+
+        /**
+         * 隱藏消息框
+         */
+        function hideMessage() {
+            messageBox.style.display = 'none';
+            messageBox.timer = null;
+        }
+
+        /**
+         * 獲取指定點的所有有效鄰居座標
+         * @param {number} r - 行索引
+         * @param {number} c - 列索引
+         * @returns {Array<{r: number, c: number}>} - 鄰居座標數組
+         */
+        function getNeighbors(r, c) {
+            const neighbors = [];
+            // 定義六個可能的相對鄰居位置
+            const potentialNeighbors = [
+                { dr: 0, dc: -1 }, { dr: 0, dc: 1 },  // 同行
+                { dr: -1, dc: -1 }, { dr: -1, dc: 0 }, // 上一行
+                { dr: 1, dc: 0 }, { dr: 1, dc: 1 }   // 下一行
+            ];
+
+            potentialNeighbors.forEach(offset => {
+                const nr = r + offset.dr;
+                const nc = c + offset.dc;
+
+                // 檢查鄰居座標是否在棋盤範圍內
+                if (nr >= 0 && nr < BOARD_SIZE) {
+                    // 確保行存在且列在該行範圍內
+                    if (board[nr] && nc >= 0 && nc < board[nr].length) {
+                         // 同時檢查 points 陣列中是否存在對應座標 (確保初始化完成)
+                         if (points[nr] && points[nr][nc]) {
+                             neighbors.push({ r: nr, c: nc });
+                         }
+                    }
+                }
+            });
+            return neighbors;
+        }
+
+       /**
+        * 查找與指定點相連的同色棋子群組
+        * @param {number} r - 起始點行索引
+        * @param {number} c - 起始點列索引
+        * @param {number} player - 玩家 (BLACK 或 WHITE)
+        * @returns {Array<{r: number, c: number}>} - 棋子群組座標數組
+        */
+       function findGroup(r, c, player) {
+           const group = [];
+           const visited = new Set(); // 記錄已訪問點，避免重複搜索
+           const queue = [{ r, c }]; // 使用佇列進行廣度優先搜索 (BFS)
+           visited.add(`${r},${c}`);
+
+           while (queue.length > 0) {
+               const current = queue.shift();
+                // 檢查當前點是否有效且仍屬於目標玩家 (可能在搜索中被提掉)
+                if (!board[current.r] || board[current.r][current.c] !== player) continue;
+
+               group.push(current); // 將當前點加入群組
+
+               // 遍歷鄰居
+               getNeighbors(current.r, current.c).forEach(neighbor => {
+                   const key = `${neighbor.r},${neighbor.c}`;
+                   // 如果鄰居是同色棋子且未被訪問過
+                   if (!visited.has(key) && board[neighbor.r] && board[neighbor.r][neighbor.c] === player) {
+                       visited.add(key);
+                       queue.push(neighbor); // 加入佇列待處理
+                   }
+               });
+           }
+           return group;
+       }
+
+        /**
+         * 計算一個棋子群組的氣（相鄰的空點數量）
+         * @param {Array<{r: number, c: number}>} group - 棋子群組座標數組
+         * @returns {number} - 氣的數量
+         */
+        function calculateLiberties(group) {
+            const liberties = new Set(); // 使用 Set 自動去重
+             if (!group || group.length === 0) return 0;
+
+            group.forEach(stone => {
+                if (stone && stone.r !== undefined && stone.c !== undefined) {
+                    getNeighbors(stone.r, stone.c).forEach(neighbor => {
+                        // 如果鄰居是空點，加入氣集合
+                        if (board[neighbor.r] && board[neighbor.r][neighbor.c] === EMPTY) {
+                            liberties.add(`${neighbor.r},${neighbor.c}`);
+                        }
+                    });
+                }
+            });
+            return liberties.size; // 返回氣的數量
+        }
+
+        /**
+         * 檢查落子後是否提掉了對方的棋子，並移除被提的子
+         * @param {number} r - 落子點行索引
+         * @param {number} c - 落子點列索引
+         * @param {number} player - 當前玩家
+         * @returns {number} - 提掉的棋子數量
+         */
+        function checkAndRemoveCaptures(r, c, player) {
+            let capturedStones = 0;
+            const opponent = (player === BLACK) ? WHITE : BLACK;
+
+            // 檢查落子點的鄰居
+            getNeighbors(r, c).forEach(neighbor => {
+                // 如果鄰居是對方棋子
+                if (board[neighbor.r] && board[neighbor.r][neighbor.c] === opponent) {
+                    const group = findGroup(neighbor.r, neighbor.c, opponent);
+                    // 如果該對方群組沒有氣了
+                    if (group.length > 0 && calculateLiberties(group) === 0) {
+                        // 提掉這個群組
+                        group.forEach(stone => {
+                            if(board[stone.r]) {
+                                board[stone.r][stone.c] = EMPTY; // 從棋盤移除
+                            }
+                        });
+                        capturedStones += group.length; // 累計提子數
+                    }
+                }
+            });
+            return capturedStones;
+        }
+
+       /**
+        * 檢查在指定位置落子是否為自殺行為（除非能提子）
+        * @param {number} r - 預計落子點行索引
+        * @param {number} c - 預計落子點列索引
+        * @param {number} player - 當前玩家
+        * @returns {boolean} - 如果是自殺行為則返回 true，否則 false
+        */
+       function isSuicide(r, c, player) {
+           // 檢查座標有效性
+           if (!board[r] || c < 0 || c >= board[r].length) return true; // 無效座標視為不能落子
+           if (board[r][c] !== EMPTY) return true; // 該點已有棋子
+
+           // --- 模擬落子 ---
+           board[r][c] = player;
+
+           // 1. 檢查落子後，該子自身所在的群組是否有氣
+           const group = findGroup(r, c, player);
+           const groupLiberties = calculateLiberties(group);
+
+           // 2. 檢查落子後，是否能提掉對方的子
+           let capturesOpponent = false;
+           const opponent = (player === BLACK) ? WHITE : BLACK;
+           getNeighbors(r, c).forEach(neighbor => {
+               if (board[neighbor.r] && board[neighbor.r][neighbor.c] === opponent) {
+                   const opponentGroup = findGroup(neighbor.r, neighbor.c, opponent);
+                   // 檢查對方群組在落子 *後* 是否無氣
+                   if (calculateLiberties(opponentGroup) === 0) {
+                       capturesOpponent = true;
+                   }
+               }
+           });
+
+           // --- 恢復棋盤狀態 ---
+           board[r][c] = EMPTY;
+
+           // 判斷：如果落子後自身群組無氣，且不能提掉對方棋子，則為自殺
+           return groupLiberties === 0 && !capturesOpponent;
+       }
+
+        /**
+         * 處理畫布點擊事件
+         * @param {MouseEvent} event - 點擊事件對象
+         */
+        function handleClick(event) {
+             if (isGameOver) {
+                 showMessage("遊戲已結束。請重置或設定新大小。", 2000);
+                 return;
+             }
+
+            const rect = canvas.getBoundingClientRect(); // 獲取畫布位置
+            // 計算點擊位置相對於畫布左上角的座標
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            let closestPoint = null;
+            let minDistSq = Infinity; // 最小距離的平方
+
+            if (points.length === 0) return; // 尚未初始化點
+
+            // 找到距離點擊位置最近的交叉點
+            points.flat().forEach(p => {
+                 if (!p) return;
+                const distSq = (x - p.x) ** 2 + (y - p.y) ** 2;
+                if (distSq < minDistSq) {
+                    minDistSq = distSq;
+                    closestPoint = p;
+                }
+            });
+
+            // 如果點擊位置離任何交叉點都太遠，則忽略
+            // 點擊容錯半徑設為棋子半徑的 1.8 倍平方
+            if (!closestPoint || minDistSq > stoneRadius ** 2 * 1.8) {
+                return;
+            }
+
+            const { r, c } = closestPoint; // 獲取最近點的行列索引
+
+            // 再次檢查座標有效性
+            if (!board[r] || c < 0 || c >= board[r].length) {
+                console.error(`Invalid point clicked: (${r}, ${c})`);
+                return;
+            }
+
+            // 檢查該點是否已有棋子
+            if (board[r][c] !== EMPTY) {
+                showMessage("這裡已經有棋子了！");
+                return;
+            }
+
+             // 檢查是否為自殺點
+             if (isSuicide(r, c, currentPlayer)) {
+                 showMessage("不能自殺！");
+                 return;
+             }
+
+            // --- 合法落子流程 ---
+            // 1. 在棋盤上放置棋子
+            board[r][c] = currentPlayer;
+            lastMovePassed = false; // 重置連續 Pass 標記
+
+            // 2. 檢查並移除對方的提子
+            const capturedCount = checkAndRemoveCaptures(r, c, currentPlayer);
+            captures[currentPlayer] += capturedCount; // 更新提子數
+
+            // 3. 再次檢查自身是否無氣 (防止複雜情況下的自殺，例如填滿對方最後一眼)
+             const ownGroup = findGroup(r, c, currentPlayer);
+             if (calculateLiberties(ownGroup) === 0 && capturedCount === 0) {
+                 // 如果落子後自己沒氣，且這次落子沒有提子，說明是無效落子
+                 console.warn("落子後自身無氣且未提子，撤銷操作。");
+                 board[r][c] = EMPTY; // 恢復為空
+                 captures[currentPlayer] -= capturedCount; // 撤銷提子數增加 (雖然是0)
+                 showMessage("無效落子（導致自身無氣）");
+                 return; // 不切換玩家，不重繪
+             }
+
+            // 4. 切換玩家
+            switchPlayer();
+
+            // 5. 重新繪製棋盤和更新 UI
+            drawBoard();
+            updateUI();
+        }
+
+        /**
+         * 切換當前玩家
+         */
+        function switchPlayer() {
+            currentPlayer = (currentPlayer === BLACK) ? WHITE : BLACK;
+        }
+
+        /**
+         * 處理跳過按鈕點擊
+         */
+        function handlePass() {
+             if (isGameOver) return;
+
+            if (lastMovePassed) {
+                // 連續兩次 Pass，遊戲結束
+                showMessage("雙方都跳過，遊戲結束！", 3000);
+                isGameOver = true;
+                disableClicks(); // 禁用棋盤點擊
+            } else {
+                lastMovePassed = true;
+                showMessage(`${currentPlayer === BLACK ? '黑棋' : '白棋'} 跳過`, 1500);
+                switchPlayer(); // 輪到對方
+                updateUI();
+            }
+        }
+
+        /**
+         * 禁用畫布點擊事件
+         */
+        function disableClicks() {
+            canvas.removeEventListener('click', handleClick);
+            canvas.style.cursor = 'not-allowed';
+        }
+
+        /**
+         * 啟用畫布點擊事件
+         */
+        function enableClicks() {
+            canvas.removeEventListener('click', handleClick); // 先移除，防止重複綁定
+            canvas.addEventListener('click', handleClick);
+            canvas.style.cursor = 'pointer'; // 恢復鼠標樣式
+        }
+
+        // --- 事件監聽器設定 ---
+
+        // 設定大小按鈕
+        setSizeButton.addEventListener('click', startGameWithSize);
+
+        // 重置按鈕 (使用當前大小)
+        resetButton.addEventListener('click', initGame);
+
+        // 跳過按鈕
+        passButton.addEventListener('click', handlePass);
+
+        // 窗口大小變化時重新繪製
+        window.addEventListener('resize', () => {
+            clearTimeout(window.resizedFinished); // 防抖處理
+            window.resizedFinished = setTimeout(() => {
+                console.log("Resizing window...");
+                // 只需重繪，不需要完全重新初始化遊戲狀態
+                resizeCanvas();
+                calculatePoints();
+                drawBoard();
+                 console.log("Resize finished.");
+            }, 250);
+        });
+
+        // --- 初始啟動 ---
+         // 確保 DOM 完全載入後再執行初始化腳本
+         document.addEventListener('DOMContentLoaded', (event) => {
+             boardSizeInput.value = BOARD_SIZE; // 將預設值顯示在輸入框
+             startGameWithSize(); // 使用預設或輸入框中的值啟動遊戲
+         });
+
+    </script>
+
+    <!-- Cloudflare Web Analytics -->
+    <script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "085947a649384dff92cf6bed50f3d9f1"}'></script>
+    <!-- End Cloudflare Web Analytics -->
+
+</body>
+</html>
